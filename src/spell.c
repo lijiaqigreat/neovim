@@ -2355,10 +2355,7 @@ static void slang_clear(slang_T *lp)
   if (lp->sl_sofo) {
     // "ga_len" is set to 1 without adding an item for latin1
     // SOFOFROM and SOFOTO items: free lists of wide characters.
-    for (i = 0; i < gap->ga_len; ++i){
-        free(((int **)gap->ga_data)[i]);
-    }
-    ga_clear(gap);
+    ga_clear_strings(gap);
   } else {
   // SAL items: free salitem_T items
     GA_DEEP_CLEAR(gap,salitem_T, salitem_clear);
