@@ -1511,12 +1511,10 @@ line_read_in:
            * compute the first offset.
            */
           if (state == TS_BINARY) {
-            /* Get the tag file size (don't use mch_fstat(), it's not
-             * portable). */
-            if ((filesize = lseek(fileno(fp),
-                     (off_t)0L, SEEK_END)) <= 0)
+            // Get the tag file size.
+            if ((filesize = lseek(fileno(fp), (off_t)0L, SEEK_END)) <= 0) {
               state = TS_LINEAR;
-            else {
+            } else {
               lseek(fileno(fp), (off_t)0L, SEEK_SET);
 
               /* Calculate the first read offset in the file.  Start
@@ -1990,8 +1988,7 @@ findtag_end:
     match_count = 0;
 
   if (match_count > 0)
-    matches = (char_u **)lalloc((long_u)(match_count * sizeof(char_u *)),
-        TRUE);
+    matches = xmalloc(match_count * sizeof(char_u *));
   else
     matches = NULL;
   match_count = 0;

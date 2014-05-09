@@ -135,7 +135,6 @@ static void serialize_visualinfo(visualinfo_T *info, FILE *fp);
 static void unserialize_visualinfo(visualinfo_T *info, FILE *fp);
 static void put_header_ptr(FILE *fp, u_header_T *uhp);
 
-#define U_ALLOC_LINE(size) lalloc((long_u)(size), FALSE)
 static char_u *u_save_line(linenr_T);
 
 /* used in undo_end() to report number of added and deleted lines */
@@ -403,7 +402,7 @@ int u_savecommon(linenr_T top, linenr_T bot, linenr_T newbot, int reload)
        * Make a new header entry.  Do this first so that we don't mess
        * up the undo info when out of memory.
        */
-      uhp = (u_header_T *)U_ALLOC_LINE(sizeof(u_header_T));
+      uhp = xmalloc(sizeof(u_header_T));
 #ifdef U_DEBUG
       uhp->uh_magic = UH_MAGIC;
 #endif
@@ -569,7 +568,7 @@ int u_savecommon(linenr_T top, linenr_T bot, linenr_T newbot, int reload)
   /*
    * add lines in front of entry list
    */
-  uep = (u_entry_T *)U_ALLOC_LINE(sizeof(u_entry_T));
+  uep = xmalloc(sizeof(u_entry_T));
   memset(uep, 0, sizeof(u_entry_T));
 #ifdef U_DEBUG
   uep->ue_magic = UE_MAGIC;
@@ -591,7 +590,7 @@ int u_savecommon(linenr_T top, linenr_T bot, linenr_T newbot, int reload)
   }
 
   if (size > 0) {
-    uep->ue_array = (char_u **)U_ALLOC_LINE(sizeof(char_u *) * size);
+    uep->ue_array = xmalloc(sizeof(char_u *) * size);
     for (i = 0, lnum = top + 1; i < size; ++i) {
       fast_breakcheck();
       if (got_int) {
@@ -676,7 +675,6 @@ char_u *u_get_undo_file_name(char_u *buf_ffname, int reading)
   char_u      *undo_file_name = NULL;
   int dir_len;
   char_u      *p;
-  struct stat st;
   char_u      *ffname = buf_ffname;
 #ifdef HAVE_READLINK
   char_u fname_buf[MAXPATHL];
@@ -724,7 +722,7 @@ char_u *u_get_undo_file_name(char_u *buf_ffname, int reading)
 
     // When reading check if the file exists.
     if (undo_file_name != NULL &&
-        (!reading || mch_stat((char *)undo_file_name, &st) >= 0)) {
+        (!reading || os_file_exists(undo_file_name))) {
       break;
     }
     free(undo_file_name);
@@ -769,7 +767,7 @@ static size_t fwrite_crypt(buf_T *buf, char_u *ptr, size_t len, FILE *fp)
   if (len < 100)
     copy = small_buf;      /* no malloc()/free() for short strings */
   else {
-    copy = lalloc(len, FALSE);
+    copy = xmalloc(len);
   }
   crypt_encode(ptr, len, copy);
   i = fwrite(copy, len, (size_t)1, fp);
@@ -901,7 +899,7 @@ static u_header_T *unserialize_uhp(FILE *fp, char_u *file_name)
   int c;
   int error;
 
-  uhp = (u_header_T *)U_ALLOC_LINE(sizeof(u_header_T));
+  uhp = xmalloc(sizeof(u_header_T));
   memset(uhp, 0, sizeof(u_header_T));
 #ifdef U_DEBUG
   uhp->uh_magic = UH_MAGIC;
@@ -997,7 +995,7 @@ static u_entry_T *unserialize_uep(FILE *fp, int *error, char_u *file_name)
   char_u      *line;
   int line_len;
 
-  uep = (u_entry_T *)U_ALLOC_LINE(sizeof(u_entry_T));
+  uep = xmalloc(sizeof(u_entry_T));
   memset(uep, 0, sizeof(u_entry_T));
 #ifdef U_DEBUG
   uep->ue_magic = UE_MAGIC;
@@ -1007,7 +1005,7 @@ static u_entry_T *unserialize_uep(FILE *fp, int *error, char_u *file_name)
   uep->ue_lcount = get4c(fp);
   uep->ue_size = get4c(fp);
   if (uep->ue_size > 0) {
-    array = (char_u **)U_ALLOC_LINE(sizeof(char_u *) * uep->ue_size);
+    array = xmalloc(sizeof(char_u *) * uep->ue_size);
     memset(array, 0, sizeof(char_u *) * uep->ue_size);
   } else
     array = NULL;
@@ -1108,11 +1106,6 @@ void u_write_undo(char_u *name, int forceit, buf_T *buf, char_u *hash)
   FILE        *fp = NULL;
   int perm;
   int write_ok = FALSE;
-#ifdef UNIX
-  int st_old_valid = FALSE;
-  struct stat st_old;
-  struct stat st_new;
-#endif
   int do_crypt = FALSE;
 
   if (name == NULL) {
@@ -1136,16 +1129,10 @@ void u_write_undo(char_u *name, int forceit, buf_T *buf, char_u *hash)
    */
   perm = 0600;
   if (buf->b_ffname != NULL) {
-#ifdef UNIX
-    if (mch_stat((char *)buf->b_ffname, &st_old) >= 0) {
-      perm = st_old.st_mode;
-      st_old_valid = TRUE;
-    }
-#else
     perm = os_getperm(buf->b_ffname);
-    if (perm < 0)
+    if (perm < 0) {
       perm = 0600;
-#endif
+    }
   }
 
   /* strip any s-bit */
@@ -1224,14 +1211,17 @@ void u_write_undo(char_u *name, int forceit, buf_T *buf, char_u *hash)
    * this fails, set the protection bits for the group same as the
    * protection bits for others.
    */
-  if (st_old_valid
-      && mch_stat((char *)file_name, &st_new) >= 0
-      && st_new.st_gid != st_old.st_gid
+  FileInfo file_info_old;
+  FileInfo file_info_new;
+  if (os_get_file_info((char *)buf->b_ffname, &file_info_old)
+      && os_get_file_info((char *)file_name, &file_info_new)
+      && file_info_old.stat.st_gid != file_info_new.stat.st_gid
 # ifdef HAVE_FCHOWN  /* sequent-ptx lacks fchown() */
-      && fchown(fd, (uid_t)-1, st_old.st_gid) != 0
+      && fchown(fd, (uid_t)-1, file_info_old.stat.st_gid) != 0
 # endif
-      )
+      ) {
     os_setperm(file_name, (perm & 0707) | ((perm & 07) << 3));
+  }
 # ifdef HAVE_SELINUX
   if (buf->b_ffname != NULL)
     mch_copy_sec(buf->b_ffname, file_name);
@@ -1352,10 +1342,6 @@ void u_read_undo(char_u *name, char_u *hash, char_u *orig_name)
 #ifdef U_DEBUG
   int         *uhp_table_used;
 #endif
-#ifdef UNIX
-  struct stat st_orig;
-  struct stat st_undo;
-#endif
   int do_decrypt = FALSE;
 
   if (name == NULL) {
@@ -1366,10 +1352,12 @@ void u_read_undo(char_u *name, char_u *hash, char_u *orig_name)
 #ifdef UNIX
     /* For safety we only read an undo file if the owner is equal to the
      * owner of the text file or equal to the current user. */
-    if (mch_stat((char *)orig_name, &st_orig) >= 0
-        && mch_stat((char *)file_name, &st_undo) >= 0
-        && st_orig.st_uid != st_undo.st_uid
-        && st_undo.st_uid != getuid()) {
+    FileInfo file_info_orig;
+    FileInfo file_info_undo;
+    if (os_get_file_info((char *)orig_name, &file_info_orig)
+        && os_get_file_info((char *)file_name, &file_info_undo)
+        && file_info_orig.stat.st_uid != file_info_undo.stat.st_uid
+        && file_info_undo.stat.st_uid != getuid()) {
       if (p_verbose > 0) {
         verbose_enter();
         smsg((char_u *)_("Not reading undo file, owner differs: %s"),
@@ -1484,8 +1472,7 @@ void u_read_undo(char_u *name, char_u *hash, char_u *orig_name)
    * sequence numbers of the headers.
    * When there are no headers uhp_table is NULL. */
   if (num_head > 0) {
-    uhp_table = (u_header_T **)U_ALLOC_LINE(
-        num_head * sizeof(u_header_T *));
+    uhp_table = xmalloc(num_head * sizeof(u_header_T *));
   }
 
   while ((c = get2c(fp)) == UF_HEADER_MAGIC) {
@@ -2122,7 +2109,7 @@ static void u_undoredo(int undo)
 
     /* delete the lines between top and bot and save them in newarray */
     if (oldsize > 0) {
-      newarray = (char_u **)U_ALLOC_LINE(sizeof(char_u *) * oldsize);
+      newarray = xmalloc(sizeof(char_u *) * oldsize);
       /* delete backwards, it goes faster in most cases */
       for (lnum = bot - 1, i = oldsize; --i >= 0; --lnum) {
         /* what can we do when we run out of memory? */

@@ -344,7 +344,6 @@ void ex_sort(exarg_T *eap)
   int len;
   linenr_T lnum;
   long maxlen = 0;
-  sorti_T     *nrs;
   size_t count = (size_t)(eap->line2 - eap->line1 + 1);
   size_t i;
   char_u      *p;
@@ -367,9 +366,7 @@ void ex_sort(exarg_T *eap)
   sortbuf1 = NULL;
   sortbuf2 = NULL;
   regmatch.regprog = NULL;
-  nrs = (sorti_T *)lalloc((long_u)(count * sizeof(sorti_T)), TRUE);
-  if (nrs == NULL)
-    goto sortend;
+  sorti_T *nrs = xmalloc(count * sizeof(sorti_T));
 
   sort_abort = sort_ic = sort_rx = sort_nr = sort_oct = sort_hex = 0;
 
@@ -621,10 +618,8 @@ void ex_retab(exarg_T *eap)
             /* len is actual number of white characters used */
             len = num_spaces + num_tabs;
             old_len = (long)STRLEN(ptr);
-            new_line = lalloc(old_len - col + start_col + len + 1,
-                TRUE);
-            if (new_line == NULL)
-              break;
+            new_line = xmalloc(old_len - col + start_col + len + 1);
+
             if (start_col > 0)
               memmove(new_line, ptr, (size_t)start_col);
             memmove(new_line + start_col + len,
@@ -1067,8 +1062,6 @@ do_filter (
 
   /* Create the shell command in allocated memory. */
   cmd_buf = make_filter_cmd(cmd, itmp, otmp);
-  if (cmd_buf == NULL)
-    goto filterend;
 
   windgoto((int)Rows - 1, 0);
   cursor_on();
@@ -1319,7 +1312,7 @@ do_shell (
 /*
  * Create a shell command from a command string, input redirection file and
  * output redirection file.
- * Returns an allocated string with the shell command, or NULL for failure.
+ * Returns an allocated string with the shell command.
  */
 char_u *
 make_filter_cmd (
@@ -1328,17 +1321,12 @@ make_filter_cmd (
     char_u *otmp              /* NULL or name of output file */
 )
 {
-  char_u      *buf;
-  long_u len;
-
-  len = (long_u)STRLEN(cmd) + 3;                        /* "()" + NUL */
+  size_t len = STRLEN(cmd) + 3;                        /* "()" + NUL */
   if (itmp != NULL)
-    len += (long_u)STRLEN(itmp) + 9;                    /* " { < " + " } " */
+    len += STRLEN(itmp) + 9;                    /* " { < " + " } " */
   if (otmp != NULL)
-    len += (long_u)STRLEN(otmp) + (long_u)STRLEN(p_srr) + 2;     /* "  " */
-  buf = lalloc(len, TRUE);
-  if (buf == NULL)
-    return NULL;
+    len += STRLEN(otmp) + STRLEN(p_srr) + 2;     /* "  " */
+  char_u *buf = xmalloc(len);
 
 #if defined(UNIX)
   /*
@@ -1504,13 +1492,9 @@ void write_viminfo(char_u *file, int forceit)
   FILE        *fp_in = NULL;    /* input viminfo file, if any */
   FILE        *fp_out = NULL;   /* output viminfo file */
   char_u      *tempname = NULL;         /* name of temp viminfo file */
-  struct stat st_new;           /* mch_stat() of potential new file */
   char_u      *wp;
 #if defined(UNIX)
   mode_t umask_save;
-#endif
-#ifdef UNIX
-  struct stat st_old;           /* mch_stat() of existing viminfo file */
 #endif
 
   if (no_viminfo())
@@ -1523,7 +1507,7 @@ void write_viminfo(char_u *file, int forceit)
   fp_in = mch_fopen((char *)fname, READBIN);
   if (fp_in == NULL) {
     /* if it does exist, but we can't read it, don't try writing */
-    if (mch_stat((char *)fname, &st_new) == 0)
+    if (os_file_exists(fname))
       goto end;
 #if defined(UNIX)
     /*
@@ -1548,16 +1532,15 @@ void write_viminfo(char_u *file, int forceit)
      * overwrite a user's viminfo file after a "su root", with a
      * viminfo file that the user can't read.
      */
-    st_old.st_dev = (dev_t)0;
-    st_old.st_ino = 0;
-    st_old.st_mode = 0600;
-    if (mch_stat((char *)fname, &st_old) == 0
+
+    FileInfo old_info;  // FileInfo of existing viminfo file
+    if (os_get_file_info((char *)fname, &old_info)
         && getuid() != ROOT_UID
-        && !(st_old.st_uid == getuid()
-             ? (st_old.st_mode & 0200)
-             : (st_old.st_gid == getgid()
-                ? (st_old.st_mode & 0020)
-                : (st_old.st_mode & 0002)))) {
+        && !(old_info.stat.st_uid == getuid()
+             ? (old_info.stat.st_mode & 0200)
+             : (old_info.stat.st_gid == getgid()
+                ? (old_info.stat.st_mode & 0020)
+                : (old_info.stat.st_mode & 0002)))) {
       int tt = msg_didany;
 
       /* avoid a wait_return for this message, it's annoying */
@@ -1575,7 +1558,7 @@ void write_viminfo(char_u *file, int forceit)
        * Check if tempfile already exists.  Never overwrite an
        * existing file!
        */
-      if (mch_stat((char *)tempname, &st_new) == 0) {
+      if (os_file_exists(tempname)) {
         /*
          * Try another name.  Change one character, just before
          * the extension.
@@ -1583,8 +1566,7 @@ void write_viminfo(char_u *file, int forceit)
         wp = tempname + STRLEN(tempname) - 5;
         if (wp < path_tail(tempname))                 /* empty file name? */
           wp = path_tail(tempname);
-        for (*wp = 'z'; mch_stat((char *)tempname, &st_new) == 0;
-             --*wp) {
+        for (*wp = 'z'; os_file_exists(tempname); --*wp) {
           /*
            * They all exist?  Must be something wrong! Don't
            * write the viminfo file then.
@@ -1610,7 +1592,7 @@ void write_viminfo(char_u *file, int forceit)
       umask_save = umask(0);
       fd = mch_open((char *)tempname,
           O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW,
-          (int)((st_old.st_mode & 0777) | 0600));
+          (int)((old_info.stat.st_mode & 0777) | 0600));
       (void)umask(umask_save);
 # else
       fd = mch_open((char *)tempname,
@@ -1636,8 +1618,9 @@ void write_viminfo(char_u *file, int forceit)
        * Make sure the owner can read/write it.  This only works for
        * root.
        */
-      if (fp_out != NULL)
-        ignored = fchown(fileno(fp_out), st_old.st_uid, st_old.st_gid);
+      if (fp_out != NULL) {
+        fchown(fileno(fp_out), old_info.stat.st_uid, old_info.stat.st_gid);
+      }
 #endif
     }
   }
@@ -1893,16 +1876,11 @@ viminfo_readstring (
 {
   char_u      *retval;
   char_u      *s, *d;
-  long len;
 
   if (virp->vir_line[off] == Ctrl_V && vim_isdigit(virp->vir_line[off + 1])) {
-    len = atol((char *)virp->vir_line + off + 1);
-    retval = lalloc(len, TRUE);
-    if (retval == NULL) {
-      /* Line too long?  File messed up?  Skip next line. */
-      (void)vim_fgets(virp->vir_line, 10, virp->vir_fd);
-      return NULL;
-    }
+    ssize_t len = atol((char *)virp->vir_line + off + 1);
+    retval = xmalloc(len);
+    // TODO(philix): change type of vim_fgets() size argument to size_t
     (void)vim_fgets(retval, (int)len, virp->vir_fd);
     s = retval + 1;         /* Skip the leading '<' */
   } else {
