@@ -881,7 +881,10 @@ int flags;
       if (lines_ga.ga_len > 0) {
         sourcing_lnum =
           ((wcmd_T *)lines_ga.ga_data)[lines_ga.ga_len - 1].lnum;
-        GA_DEEP_CLEAR(&lines_ga, wcmd_T, wcmd_clear);
+        while (lines_ga.ga_len > 0) {
+          free(((wcmd_T *)(lines_ga.ga_data))[lines_ga.ga_len - 1].line);
+          --lines_ga.ga_len;
+        }
       }
       current_line = 0;
     }
