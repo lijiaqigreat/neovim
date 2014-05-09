@@ -344,7 +344,6 @@ void ex_sort(exarg_T *eap)
   int len;
   linenr_T lnum;
   long maxlen = 0;
-  sorti_T     *nrs;
   size_t count = (size_t)(eap->line2 - eap->line1 + 1);
   size_t i;
   char_u      *p;
@@ -367,9 +366,7 @@ void ex_sort(exarg_T *eap)
   sortbuf1 = NULL;
   sortbuf2 = NULL;
   regmatch.regprog = NULL;
-  nrs = (sorti_T *)lalloc((long_u)(count * sizeof(sorti_T)), TRUE);
-  if (nrs == NULL)
-    goto sortend;
+  sorti_T *nrs = xmalloc(count * sizeof(sorti_T));
 
   sort_abort = sort_ic = sort_rx = sort_nr = sort_oct = sort_hex = 0;
 
@@ -621,10 +618,8 @@ void ex_retab(exarg_T *eap)
             /* len is actual number of white characters used */
             len = num_spaces + num_tabs;
             old_len = (long)STRLEN(ptr);
-            new_line = lalloc(old_len - col + start_col + len + 1,
-                TRUE);
-            if (new_line == NULL)
-              break;
+            new_line = xmalloc(old_len - col + start_col + len + 1);
+
             if (start_col > 0)
               memmove(new_line, ptr, (size_t)start_col);
             memmove(new_line + start_col + len,
@@ -1067,8 +1062,6 @@ do_filter (
 
   /* Create the shell command in allocated memory. */
   cmd_buf = make_filter_cmd(cmd, itmp, otmp);
-  if (cmd_buf == NULL)
-    goto filterend;
 
   windgoto((int)Rows - 1, 0);
   cursor_on();
@@ -1319,7 +1312,7 @@ do_shell (
 /*
  * Create a shell command from a command string, input redirection file and
  * output redirection file.
- * Returns an allocated string with the shell command, or NULL for failure.
+ * Returns an allocated string with the shell command.
  */
 char_u *
 make_filter_cmd (
@@ -1328,17 +1321,12 @@ make_filter_cmd (
     char_u *otmp              /* NULL or name of output file */
 )
 {
-  char_u      *buf;
-  long_u len;
-
-  len = (long_u)STRLEN(cmd) + 3;                        /* "()" + NUL */
+  size_t len = STRLEN(cmd) + 3;                        /* "()" + NUL */
   if (itmp != NULL)
-    len += (long_u)STRLEN(itmp) + 9;                    /* " { < " + " } " */
+    len += STRLEN(itmp) + 9;                    /* " { < " + " } " */
   if (otmp != NULL)
-    len += (long_u)STRLEN(otmp) + (long_u)STRLEN(p_srr) + 2;     /* "  " */
-  buf = lalloc(len, TRUE);
-  if (buf == NULL)
-    return NULL;
+    len += STRLEN(otmp) + STRLEN(p_srr) + 2;     /* "  " */
+  char_u *buf = xmalloc(len);
 
 #if defined(UNIX)
   /*
@@ -1893,16 +1881,11 @@ viminfo_readstring (
 {
   char_u      *retval;
   char_u      *s, *d;
-  long len;
 
   if (virp->vir_line[off] == Ctrl_V && vim_isdigit(virp->vir_line[off + 1])) {
-    len = atol((char *)virp->vir_line + off + 1);
-    retval = lalloc(len, TRUE);
-    if (retval == NULL) {
-      /* Line too long?  File messed up?  Skip next line. */
-      (void)vim_fgets(virp->vir_line, 10, virp->vir_fd);
-      return NULL;
-    }
+    ssize_t len = atol((char *)virp->vir_line + off + 1);
+    retval = xmalloc(len);
+    // TODO(philix): change type of vim_fgets() size argument to size_t
     (void)vim_fgets(retval, (int)len, virp->vir_fd);
     s = retval + 1;         /* Skip the leading '<' */
   } else {
