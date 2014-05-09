@@ -2337,6 +2337,7 @@ static void slang_clear(slang_T *lp)
       // SOFOFROM and SOFOTO items: free lists of wide characters.
       GA_DEEP_CLEAR(gap, int*, free);
     }
+    ga_clear(gap);
   } else {
     // SAL items: free salitem_T items
     while (gap->ga_len > 0) {
@@ -2348,7 +2349,7 @@ static void slang_clear(slang_T *lp)
       free(smp->sm_oneof_w);
       free(smp->sm_to_w);
     }
-   ga_clear(gap);
+    ga_clear(gap);
   }
 
   for (i = 0; i < lp->sl_prefixcnt; ++i)
