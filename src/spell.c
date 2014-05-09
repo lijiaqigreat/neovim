@@ -2348,7 +2348,7 @@ static void slang_clear(slang_T *lp)
       free(smp->sm_oneof_w);
       free(smp->sm_to_w);
     }
--   ga_clear(gap);
+   ga_clear(gap);
   }
 
   for (i = 0; i < lp->sl_prefixcnt; ++i)
