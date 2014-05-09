@@ -14,6 +14,8 @@
 // #include "globals.h"
 #include "memline.h"
 
+#define FREE_PTR(a) free(*a)
+
 /// Clear an allocated growing array.
 void ga_clear(garray_T *gap)
 {
@@ -30,11 +32,7 @@ void ga_clear(garray_T *gap)
 /// @param gap
 void ga_clear_strings(garray_T *gap)
 {
-  int i;
-  for (i = 0; i < gap->ga_len; ++i) {
-    free(((char_u **)(gap->ga_data))[i]);
-  }
-  ga_clear(gap);
+  GA_DEEP_CLEAR(gap, void*, FREE_PTR);
 }
 
 /// Initialize a growing array.
