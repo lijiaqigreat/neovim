@@ -2319,7 +2319,6 @@ static void fromto_clear(fromto_T *ftp)
 // Clear an slang_T so that the file can be reloaded.
 static void slang_clear(slang_T *lp)
 {
-
   garray_T    *gap;
   int i;
 
